@@ -36,6 +36,16 @@ MAX_INPUT_CHARS = 500
 MAX_FOLLOWUP_CHARS = 200
 
 
+LAST_REASON = ""   # 最近一次白話解讀退回模板的原因(沒退回時為空字串),給介面顯示用
+
+
+def _mask(text: str) -> str:
+    """錯誤訊息顯示前遮掉任何長得像金鑰的字串,避免意外洩漏。"""
+    text = re.sub(r"AIza[0-9A-Za-z_\-]{20,}", "***", text)
+    key = os.environ.get("LLM_API_KEY", "").strip()
+    return text.replace(key, "***") if key else text
+
+
 class LLMUnavailable(RuntimeError):
     """LLM 無法使用(沒設定、逾時、額度、網路等)。app 會顯示白話訊息並退回表單。"""
 
@@ -115,6 +125,8 @@ def template_narrate(context: str, previous_context: str | None = None) -> str:
 
 def narrate_with_status(context: str, previous_context: str | None = None) -> tuple[str, str]:
     """回傳 (文字, 來源),來源是 "llm" 或 "template",讓介面能誠實標示。"""
+    global LAST_REASON
+    LAST_REASON = ""
     fallback = template_narrate(context, previous_context)
     if previous_context:
         user = f"【調整前】\n{previous_context}\n\n【調整後】\n{context}"
@@ -123,12 +135,14 @@ def narrate_with_status(context: str, previous_context: str | None = None) -> tu
     try:
         out = _complete(load_prompt("explain"), user).strip()
     except LLMUnavailable as e:
-        log.warning("narrate 退回模板:%s", e)
+        LAST_REASON = _mask(str(e))[:300]
+        log.warning("narrate 退回模板:%s", LAST_REASON)
         return fallback, "template"
 
     bad = numbers_not_in_context(out, context + "\n" + (previous_context or ""))
     if bad:
         log.warning("narrate 輸出含 context 沒有的數字 %s,退回模板", sorted(bad))
+        LAST_REASON = "AI 的輸出含有輸入資料以外的數字,已被數字檢查擋下"
         return fallback, "template"
     if DISCLAIMER not in out.replace(",", "，"):   # 標點全形/半形差異不算缺漏,避免重複附上兩次
         out = out + DISCLAIMER   # 免責聲明由程式保證附上,不依賴模型

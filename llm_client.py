@@ -26,11 +26,23 @@ DEFAULT_MODEL = "gemini-3.5-flash-lite"   # 實測可用(帳號清單內);gemini
 FALLBACK = {"intent": "out_of_scope"}
 
 
+def _get_setting(name: str, default: str = "") -> str:
+    """先看環境變數;沒有的話再看 Streamlit Secrets(部署到 Streamlit Cloud 時設定值放在那裡)。"""
+    v = os.environ.get(name)
+    if v:
+        return v
+    try:
+        import streamlit as st
+        return str(st.secrets.get(name, default))
+    except Exception:   # 沒有 secrets 檔、沒裝 streamlit 等情況都當作沒設定
+        return default
+
+
 def _settings() -> tuple[str, str, float]:
-    key = os.environ.get("LLM_API_KEY", "").strip()
+    key = _get_setting("LLM_API_KEY").strip()
     if not key:
-        raise RuntimeError("沒有設定環境變數 LLM_API_KEY(金鑰只能放環境變數)")
-    return key, os.environ.get("LLM_MODEL", DEFAULT_MODEL), float(os.environ.get("LLM_TIMEOUT_S", "30"))
+        raise RuntimeError("沒有設定 LLM_API_KEY(請放在環境變數,或 Streamlit Cloud 的 Secrets;不要寫進程式碼)")
+    return key, _get_setting("LLM_MODEL", DEFAULT_MODEL), float(_get_setting("LLM_TIMEOUT_S", "30"))
 
 
 def _call_gemini(system: str, user: str, temperature: float) -> tuple[str, dict]:
@@ -72,7 +84,7 @@ def _log_usage(label: str, started: float, usage: dict, ok: bool, error: str = "
         rec = {
             "time": time.strftime("%Y-%m-%d %H:%M:%S"),
             "label": label,
-            "model": os.environ.get("LLM_MODEL", DEFAULT_MODEL),
+            "model": _get_setting("LLM_MODEL", DEFAULT_MODEL),
             "seconds": round(time.time() - started, 2),
             "ok": ok,
             **usage,

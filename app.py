@@ -33,6 +33,7 @@ from engine.schema import (
     run_full_simulation,
     validate_baseline,
 )
+import llm_hooks
 from llm_hooks import LLMUnavailable, narrate_with_status, parse_description, parse_followup
 
 # --- 設定 -------------------------------------------------------------------
@@ -43,10 +44,19 @@ DEPOSIT_RATE = 0.015      # 定存利率固定假設 1.5%(限制說明會註明)
 N_SIMULATIONS = 5000
 SEED = 123                # 固定種子:追問前後用同一組隨機數,差異才來自參數而不是運氣
 
-plt.rcParams["font.sans-serif"] = [
-    "Microsoft JhengHei", "PingFang TC", "Noto Sans CJK TC",
-    "Noto Sans CJK JP", "Arial Unicode MS", "DejaVu Sans",
-]
+def _pick_cjk_font() -> str | None:
+    """找一個可用的中文字型;雲端主機(Linux)可能沒有,此時圖表改用英文標籤,避免整排方框。"""
+    from matplotlib import font_manager
+    have = {f.name for f in font_manager.fontManager.ttflist}
+    for name in ["Microsoft JhengHei", "PingFang TC", "Noto Sans CJK TC", "Noto Sans CJK JP", "Noto Sans TC",
+                 "Noto Sans CJK SC", "Heiti TC", "WenQuanYi Zen Hei", "WenQuanYi Micro Hei", "SimHei", "Arial Unicode MS"]:
+        if name in have:
+            return name
+    return None
+
+
+CJK_FONT = _pick_cjk_font()
+plt.rcParams["font.sans-serif"] = [CJK_FONT, "DejaVu Sans"] if CJK_FONT else ["DejaVu Sans"]
 plt.rcParams["axes.unicode_minus"] = False
 
 st.set_page_config(page_title="退休提領順序風險試算器", layout="wide")
@@ -99,6 +109,7 @@ for key, default in {
     "result": None,         # 最新模擬結果
     "previous": None,       # 追問前的結果(按過按鈕才有)
     "narration": "",        # 白話解讀(算一次就存,避免每次重繪都呼叫 LLM)
+    "narration_reason": "",  # 退回模板的原因(顯示給使用者,方便判斷是額度、金鑰還是其他問題)
     "narration_source": "template",  # "llm" 或 "template"(LLM 不可用時的程式模板)
     "last_button": None,
     "last_prefix": "如果",   # 結果標題前綴:按鈕是「如果…」,自由追問是「調整:…」
@@ -120,6 +131,7 @@ def store_result(params: dict, result: dict, previous: dict | None, label: str |
     text, source = narrate_with_status(format_context_for_llm(result), prev_ctx)
     st.session_state.narration = text
     st.session_state.narration_source = source
+    st.session_state.narration_reason = llm_hooks.LAST_REASON if source == "template" else ""
 
 
 def apply_button(button_id: str):
@@ -304,14 +316,14 @@ if previous and not same_horizon:
 years = np.arange(bp["simulation_years"] + 1)
 fig, ax = plt.subplots(figsize=(9, 4))
 ax.fill_between(years, np.array(sim["percentile_10"]) / 10_000,
-                np.array(sim["percentile_90"]) / 10_000, alpha=0.25, label="10%~90% 區間")
-ax.plot(years, np.array(sim["percentile_50"]) / 10_000, linewidth=2, label="中位數")
+                np.array(sim["percentile_90"]) / 10_000, alpha=0.25, label="10%~90% 區間" if CJK_FONT else "10%-90% range")
+ax.plot(years, np.array(sim["percentile_50"]) / 10_000, linewidth=2, label="中位數" if CJK_FONT else "Median")
 if previous:
     prev_p50 = np.array(previous["simulation"]["percentile_50"]) / 10_000
     ax.plot(np.arange(len(prev_p50)), prev_p50,   # 調整前的年數可能不同,用自己的橫軸
-            linestyle="--", color="gray", label="調整前的中位數")
-ax.set_xlabel("退休後第幾年")
-ax.set_ylabel("私人資產(新台幣萬元)")
+            linestyle="--", color="gray", label="調整前的中位數" if CJK_FONT else "Median before adjustment")
+ax.set_xlabel("退休後第幾年" if CJK_FONT else "Years after retirement")
+ax.set_ylabel("私人資產(新台幣萬元)" if CJK_FONT else "Private assets (NT$ 10,000)")
 ax.set_ylim(bottom=0)
 ax.grid(alpha=0.3)
 ax.legend()
@@ -323,7 +335,9 @@ plt.close(fig)
 st.subheader("白話解讀")
 st.info(st.session_state.narration)
 if st.session_state.narration_source == "template":
-    st.caption("這段文字由程式模板產生(AI 解讀目前不可用,或被數字檢查擋下)。數字皆來自上方模擬結果。")
+    reason = st.session_state.narration_reason
+    st.caption("這段文字由程式模板產生(AI 解讀目前不可用,或被數字檢查擋下)。數字皆來自上方模擬結果。"
+               + (f" 原因:{reason}" if reason else ""))
 
 # 追問按鈕
 st.subheader("想知道如果……")

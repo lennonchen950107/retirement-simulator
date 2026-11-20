@@ -355,7 +355,7 @@ with st.form("followup_form", clear_on_submit=True):
     st.form_submit_button("送出追問", on_click=apply_followup)
 st.caption("追問只會調整上面這些參數:AI 只判斷你想改什麼,新數值由程式計算;看不懂或超出範圍時不會改動結果。")
 
-with st.expander("模型假設與限制(報告與簡報必須誠實交代)"):
+with st.expander("模型假設與限制"):
     st.markdown(
         """
 - **起點是退休當天**:私人資產總額視為退休時的金額;「目前年齡」只用來檢查輸入合理,不模擬退休前的累積或提領。

@@ -368,7 +368,8 @@ with st.expander("模型假設與限制"):
         """
     )
 
-# 開發者資訊(給隊友對 prompt 用,demo 時可收起來)
-with st.expander("開發者資訊:目前參數與給 LLM 的 context"):
-    st.json(bp)
-    st.code(format_context_for_llm(result), language="text")
+# 開發者資訊(給隊友對 prompt 用):網址加上 ?dev=1 才會顯示,一般使用者看不到
+if st.query_params.get("dev") == "1":
+    with st.expander("開發者資訊:目前參數與給 LLM 的 context"):
+        st.json(bp)
+        st.code(format_context_for_llm(result), language="text")

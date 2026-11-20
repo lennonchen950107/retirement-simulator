@@ -1,0 +1,4 @@
+# 只有抓資料、做分析時用得到(角色二);app 與部署都不需要。
+-r requirements.txt
+statsmodels
+yfinance
